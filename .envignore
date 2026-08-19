@@ -1,0 +1,6 @@
+# 忽略所有本地环境变量文件（可能含密钥），仅保留模板
+.env
+.env.*
+!.env.example
+!.env.sample
+!.env.template

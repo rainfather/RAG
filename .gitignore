@@ -1,0 +1,29 @@
+# Python
+venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+
+# 环境与密钥
+.env
+
+# 构建产物（可重建）
+faiss_db/
+bm25_index.json
+document_registry.json
+evaluation_report.json
+
+# 知识库原始文档（gitignore，建库原料）
+data/*.pdf
+data/*.txt
+!data/.gitkeep
+
+# 本地模型（大文件，运行时下载/挂载）
+models/
+
+# 日志
+*.log
+
+# IDE
+.idea/
+.vscode/

@@ -1,0 +1,35 @@
+# ===== LangGraph 编排（迁移核心） =====
+langgraph>=0.2.0
+langchain>=0.3.0
+langchain-community>=0.3.0
+langchain-openai>=0.2.0
+langchain-text-splitters>=0.3.0
+langchain-huggingface>=1.0.0
+
+# ===== 检索 & 向量 =====
+faiss-cpu>=1.8.0
+sentence-transformers>=2.7.0
+rank-bm25
+jieba3k
+
+# ===== Web 框架 =====
+fastapi>=0.100.0
+uvicorn>=0.30.0
+pydantic>=2.0.0
+python-multipart>=0.0.9
+streamlit>=1.35.0
+
+# ===== 基础设施 =====
+redis>=5.0.0
+python-dotenv>=1.0.0
+pypdf>=4.0.0
+
+# ===== 测试 =====
+pytest>=7.0.0
+pytest-cov>=4.0.0
+httpx>=0.27.0
+langfuse>=2.0.0
+
+# ===== 评估（可选） =====
+# ragas/datasets 在 Windows 上有传递依赖无 wheel，见 requirements-eval.txt 单独安装
+
