@@ -1,7 +1,7 @@
 # 📚 RAG 知识问答系统（LangGraph 版）
 
 基于 **LangGraph 编排 + 混合检索 + 重排序 + 查询改写** 的 RAG 知识问答系统。
-本仓库由原 LangChain LCEL chain 版迁移而来——**功能与接口不变**（API 端点、SSE 协议、缓存语义、鉴权限流、测试行为），编排层改为 LangGraph 图结构，为后续扩展（工具调用、转人工等智能客服能力）预留节点化架构。
+本仓库由原 LangChain LCEL chain 版迁移而来——**功能与接口不变**（API 端点、SSE 协议、缓存语义、鉴权限流、测试行为），编排层改为 LangGraph 图结构，并已内置**意图路由**（知识问答 / 转人工 / 操作类 / 闲聊四意图分流），为工具调用、真实转人工通道等完整智能客服能力预留节点化扩展点。
 
 ## 🏗️ 系统架构
 
@@ -23,11 +23,19 @@
 ┌──────────────────────────────────────────────────────────────────────┐
 │                  LangGraph 图 (graph/build.py)                        │
 │                                                                      │
-│  rewrite_query ──▶ retrieve_context ──▶ (有上下文?) ──▶ generate      │
-│  (LLM 改写 1→4)    (FAISS+BM25 混合      │  否 → END(拒答)   (LLM 流式 │
-│                    检索→去重→Reranker)   │                   生成,    │
-│                                          │                   节点内   │
-│                                          │                   yield)  │
+│  route_intent（意图路由）                                              │
+│  (关键词规则预判 → LLM 分类兜底，异常保守降级 knowledge)                 │
+│    │                                                                 │
+│    ├─ knowledge ──▶ rewrite_query ──▶ retrieve_context               │
+│    │                 (LLM 改写 1→4)    (FAISS+BM25 混合检索            │
+│    │                                    →去重→Reranker)              │
+│    │                                    │                            │
+│    │                                    │ 无上下文 → END（拒答）       │
+│    │                                    ▼                            │
+│    │                                 generate（LLM 流式生成,          │
+│    │                                  节点内逐 token yield）          │
+│    └─ handoff / operation / chitchat                                 │
+│         └──▶ non_knowledge_response（固定文案）──▶ END                │
 └──────────────────────────────────────────────────────────────────────┘
               │
               ▼
@@ -50,6 +58,7 @@
 | ⚡ **流式生成** | LangGraph custom stream：节点内逐 token 发送，SSE 首字延迟低 |
 | 💾 **Redis 缓存** | 相同问题秒级返回，带连接池、健康检查、自动降级 |
 | 💬 **多轮对话** | 支持追问、指代消解，基于对话历史的上下文理解 |
+| 🧭 **意图路由** | 客服入口分流：知识问答（走 RAG）/ 转人工 / 操作类 / 闲聊；关键词规则预判（即时可靠）+ LLM 分类兜底（灵活覆盖），LLM 异常时保守降级知识问答 |
 | 🔐 **鉴权 & 限流** | API Key 白名单 + 滑动窗口频率限制 |
 | 📊 **RAGAS 评估** | Faithfulness / Answer Relevancy / Context Precision&Recall 自动评估 |
 | 📄 **多格式支持** | PDF + TXT 文档自动解析、分块、向量化（增量更新） |
@@ -136,8 +145,9 @@ data: {"type":"error","content":"..."}   # 出错
 D:\RAG\
 ├── graph\                  # LangGraph 编排核心（本次迁移新增）
 │   ├── state.py            # 图状态定义 (RagState)
+│   ├── intent.py           # 意图路由：四意图分类（规则预判 + LLM 兜底）
 │   ├── nodes.py            # 节点函数：rewrite/retrieve/generate + 纯函数工具
-│   ├── build.py            # 图构建与编译
+│   ├── build.py            # 图构建与编译（意图路由条件边 + RAG 流程）
 │   └── rag_chat.py         # 门面：对外接口（签名与旧版一致）
 ├── retrieval.py            # 检索组件（从旧 rag_core.py 拆出）
 ├── main.py                 # FastAPI 后端（8 端点，接口不变）
@@ -150,8 +160,9 @@ D:\RAG\
 ├── config.py               # 全局配置管理
 ├── data\                   # 原始文档目录
 ├── faiss_db\               # FAISS 向量库（构建产物）
-└── tests\                  # 测试（46+ 用例）
+└── tests\                  # 测试（69 用例）
     ├── test_graph.py       # 节点级 + 图级测试（FakeLLM，不依赖外部服务）
+    ├── test_intent.py      # 意图路由测试（规则预判/LLM 兜底/图级流转/降级）
     ├── test_rag.py         # rag_chat 门面测试（缓存/拒答/流式语义）
     ├── test_e2e.py         # 端到端：真实检索 + FakeLLM（不 mock 中间层）
     ├── test_sse.py         # SSE 流式协议端到端测试
@@ -181,7 +192,7 @@ pytest tests/ -v
 | 流式 | `chain.stream()` | 节点内 `get_stream_writer()` + `stream_mode="custom"` |
 | 缓存检查 | rag_chat 入口同步 | rag_chat 门面同步（行为一致） |
 | 拒答分支 | 函数内 if 判断 | 条件边路由（retrieve → END / generate） |
-| 可扩展性 | 加逻辑需改链 | 加节点/加边即可（工具调用、转人工后续接入点） |
+| 可扩展性 | 加逻辑需改链 | 加节点/加边即可；意图路由已接入（工具调用、真实转人工为后续扩展点） |
 
 ## ⚠️ 已知事项
 
